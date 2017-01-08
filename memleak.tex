@@ -1,0 +1,594 @@
+%-----------------------------------------------------------------------------
+%
+%               Template for sigplanconf LaTeX Class
+%
+% Name:         sigplanconf-template.tex
+%
+% Purpose:      A template for sigplanconf.cls, which is a LaTeX 2e class
+%               file for SIGPLAN conference proceedings.
+%
+% Guide:        Refer to "Author's Guide to the ACM SIGPLAN Class,"
+%               sigplanconf-guide.pdf
+%
+% Author:       Paul C. Anagnostopoulos
+%               Windfall Software
+%               978 371-2316
+%               paul@windfall.com
+%
+% Created:      15 February 2005
+%
+%-----------------------------------------------------------------------------
+
+
+\documentclass[preprint, numbers]{sigplanconf}
+
+% The following \documentclass options may be useful:
+
+% preprint      Remove this option only once the paper is in final form.
+% 10pt          To set in 10-point type instead of 9-point.
+% 11pt          To set in 11-point type instead of 9-point.
+% numbers       To obtain numeric citation style instead of author/year.
+
+\usepackage{amsmath}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{color}
+
+\newcommand{\cL}{{\cal L}}
+\newcommand{\comment}[1]{{\color{blue}{#1}}}
+\newcommand{\todo}[1]{{\color{red}{(TODO: #1)}}}
+\newtheorem{definition}{Definition}
+
+\begin{document}
+
+\special{papersize=8.5in,11in}
+\setlength{\pdfpageheight}{\paperheight}
+\setlength{\pdfpagewidth}{\paperwidth}
+
+\conferenceinfo{CONF 'yy}{Month d--d, 20yy, City, ST, Country}
+\copyrightyear{20yy}
+\copyrightdata{978-1-nnnn-nnnn-n/yy/mm}
+\copyrightdoi{nnnnnnn.nnnnnnn}
+
+% Uncomment the publication rights you want to use.
+%\publicationrights{transferred}
+%\publicationrights{licensed}     % this is the default
+%\publicationrights{author-pays}
+
+\titlebanner{Internal draft}         % These are ignored unless
+\preprintfooter{Runtime memory leak detection -- draft} % 'preprint' option specified.
+
+\title{Runtime memory leak detection for a web browser using statistical profiling}
+\subtitle{}
+
+\authorinfo{Micha{\l} W{\l}odarczyk}%\footnote{This work was created when the author was employed by Google Inc.}}
+           {University of Warsaw}
+           {m.wlodarczyk@mimuw.edu.pl}
+\authorinfo{Ben Cheng}
+           {Google Inc.}
+           {bccheng@google.com}
+\authorinfo{Simon Que}
+           {Google Inc.}
+           {sque@google.com}
+
+\maketitle
+
+\begin{abstract}
+We present a novel memory leak detection algorithm searching for potential
+leaks at runtime.
+Besides scenarios when a part of allocated heap becomes unreachable,
+we are able to report when objects are still reachable but
+should have been released nevertheless.
+The algorithm is based on statistical profiling and can be parameterized in order to
+keep the overhead low and reduce the number of reported false positives.
+The peak runtime overhead is less than 3\% and it is negligible for the rest of time \todo{cite?}.
+There is no memory overhead and the method works
+with any allocator.
+What distinguishes our detector from the majority of broadly used tools,
+it does not require the process to terminate.
+
+These attributes make it a perfect tool for analyzing a web browser application.
+We explain how we have applied our method to the Chromium browser and give
+examples of the leaks found.
+
+	\comment{This is a draft. All comments about future changes are written in blue.
+	Any changes to the authors list?}
+	\todo{The red color is reserved for the author's private environment for todos.
+	Remember to anonymize the paper before sending to ISMM.}
+\end{abstract}
+
+\category{D.2.4}{Software Engineering}{Software/Program Verification}[reliability, statistical methods]
+
+% general terms are not compulsory anymore,
+% you may leave them out
+\terms
+%term1, term2
+
+\keywords
+Low-overhead monitoring, runtime analysis, memory leaks
+
+\section{Introduction}
+
+Memory leaks occur when an application fails to release memory which is no longer needed.
+Memory leaks waste Random Access Memory (RAM) and thus reduce computer performance.
+Small and outwardly harmless memory leaks often go unnoticed for an extended period
+of time until they aggregate and then become problematic.
+At this point, though, it is harder to locate and rectify the sources of the leaks.
+Thus, it is helpful to detect memory leaks before they reduce the performance of computers.
+
+Recent years brought new challenges in the field of memory leak detection.
+Well-known tools such as Valgrind, LeakSanitizer, Purify \cite{valgrind, leak-san, purify} were designed
+for processes running on a local machine and with the analysis
+performed after the process terminates.
+These assumption are not satisfied for, e.g. server processes
+that are meant to run incessantly, or web browsers that are run
+on remote devices and the big percentage of process terminations
+occur after crashes \todo{how much? cite?}.
+On the other hand, intensive monitoring of allocation history
+introduces a noticeable overhead which spoils the user experience.
+We present a heuristic-based algorithm that is free of mentioned issues.
+It is based on profiling and therefore it works best for applications used widely
+by customers.
+
+To clarify the goals of the algorithm let us start with defining the problem.
+An object in memory is \textit{leaked} at time $t$ if it is never accessed
+after time $t$.
+An object is \textit{unreachable} at time $t$ if there is no reference chain
+leading to it starting from global or stack variables.
+It is easy to see that every unreachable object is at the same time leaked.
+Whereas detecting unreachability is easy when having an access to the reference graph,
+in general it is impossible to foresee if an object is going to be used in the future.
+In order to be completely sure about finding all the leaks, one should analyze whole
+allocation history after the process is terminated and detect moments when objects cease being accessed
+\todo{any profiler working like this?}.
+This approach is burdened with a large overhead though, what makes it practical only
+for local runs.
+
+Chromium is an open-source web browser project~\cite{chromium} written in C++.
+\comment{Should we write more about Chromium architecture,
+its relation to Chrome, the market share?}
+
+\section{Related work}
+
+On the highest level, memory leak detectors can be divided into static
+and dynamic types.
+Static detectors process the code itself apart from any runtime scenario
+looking for any leak that is possible to happen.
+Even basing on heuristics, they require a lot of computational power.
+Xie and Aiken~\cite{boolean} managed to investigate six large open source
+projects, including Linux kernel, with false positive ratio 10.8\%
+by expressing the problem with boolean constraints.
+The state-of-art static leak detectors employs a value-flow
+analysis \cite{flow, saber}.
+
+More common dynamic leak detectors analyze allocation history during runtime.
+The easiest approach is to detect variables getting unreachable
+what can be performed, e.g. using \textit{mark and sweep} technique~\cite{mark-and-sweep}
+known mainly from its application to JVM (Java Virtual Machine) garbage collector \todo{cite}.
+One of the first dynamic detectors, Purify~\cite{purify}, searches for memory leaks by injecting its instructions
+into the object code.
+It introduces runtime overhead of factor 3-5 what is acceptable for running
+the code locally.
+This kind of analysis is easily combined with detecting other memory access errors
+such as buffer overflow, multiple frees, or accesses of already freed memory.
+LeakSanitizer, a tool supported by Clang compiler~\cite{leak-san}, can be used with AddressSanitizer
+which helped finding over 300 bugs in Chromium~\cite{address}.
+Similar functionality is offered by Valgrind working with GCC compiler~\cite{valgrind}.
+
+A remarkable examples of detectors which go beyond the unreachability analysis
+are Cork~\cite{cork} and Sleigh~\cite{sleigh}, tools designed for garbage-collected languages.
+Cork achieves low runtime overhead (2.3\%) by augmenting the work of the garbage collector
+and Sleigh uses several components inside the JVM.
+Another approach to extract interesting information from allocation history
+is to analyze only containers.
+Xu and Rountex~\cite{containers} implemented a leak detector tracking staleness
+of elements in Java containers with rules based on a combination of
+object's memory consumption and the time since last retrieval.
+
+When tracking memory bugs gets difficult for automatic tools, one might
+try running a human-driven memory profiler and analyze the information about the heap usage
+to detect parts of the application consuming too much memory.
+An attempt to create such a profiler was undertaken in the Chromium project
+which resulted in releasing the
+Deep Memory Profiler~\cite{deep}.
+It helped finding several memory leaks, however it became impractical
+and has not been maintained since 2015.
+
+The disadvantages of the most of dynamic leak detectors are the requirement of a process
+to terminate and the employment of complex data structures tracking the heap behavior.
+To surpass them, one can take advantage of statistical techniques.
+
+An implementation of a leak detection algorithm based on the statistical profiling
+has been described by Hauswirth and Chilimbi~\cite{hauswirth}.
+They have achieved a low runtime overhead ($<5\%$ with sampling rate $0.1\%$) and have not required a process
+to terminate.
+The implementation of the algorithm, a SWAT library, was tested (however only locally) on two computer games, multimedia application,
+and web application and was able to detect some real memory leaks, however no statistics about false positives were given.
+
+The algorithm tries to detect heap objects that have not been accessed for a long time.
+This is done by explicit heap monitoring which introduces also some space overhead (up to 10\%).
+An interesting idea of their work is an enhancement of the sampling rate
+for infrequently executed code segments in order to cover miscellaneous allocation events.
+This makes the leak detector better suited for checking total correctness of
+the application.
+Our approach is more pragmatical -- we consciously pay more attention to instructions
+allocating more memory and focus on minimizing the total waste of RAM.
+
+\section{Our contribution}
+
+We present a new approach to the memory leak detection via the statistical profiling
+and explain what are the applications for which our algorithm is suitable.
+Our design is crafted for keeping the overhead low and working with any
+allocator type.
+
+The algorithm has been implemented for Chromium and deployed.
+We elaborate on the non-trivial aspects of the implementation.
+Finally we describe the results of running our detector on remote
+devices and processing the gathered data that comes from the end users.
+To the best of our knowledge, we are the first to publish results
+of such an experiment.
+\comment{Mention briefly about the results.}
+
+\section{The algorithm}
+
+As we want to detect leaks in a real-time, with little overhead and little interference with
+the allocation strategy, we need some assumptions about the nature of the application.
+
+\begin{enumerate}
+\item Most allocation instructions are correct.
+\item The allocation events can be clustered in a relatively small number of groups
+	such that each leak should fall into a single group.
+\item There is no garbage-collecting mechanism running in the background.
+	See Section \ref{sec:false} for explanation.
+\end{enumerate}
+
+The algorithm is designed to work in several tiers.
+This makes it possible to distinguish potential leaks basing only on coarse statistics before spending resources on investigating more
+precise data.
+In each tier the allocation events are divided into \textit{allocation groups}.
+The groups should be designed in such a way that every leak could be observed within a single group,
+or -- if this is infeasible -- within a small percentage of groups.
+When a group is diagnosed to contain a potential leak, the next tier is launched and the group gets dismantled
+into subgroups.
+If the last tier is reached then a report is generated and sent to the profiling server.
+
+In our implementation we initially focus on the size of allocation.
+For the sake of efficiency each group contains allocations of size $[4i, 4(i+1))$ bytes for some $i$.
+In the second tier groups are defined by the call stack of the allocation instruction
+(or some part of the call stack, see Section \ref{sec:params}).
+Observe that this schema might not work for every type of application.
+For example, if the leaked memory consists of arrays or strings with dynamically calculated sizes,
+a memory growth might be observed in many allocation groups.
+In this situation one should consider a different design of tiers.
+
+In every tier the leak detector operates in two alternating modes which are
+the data gathering interval and the analyze phase.
+The time-flow in the algorithm is measured with the total number of bytes allocated on the heap
+by all the processes of the application.
+During the data gathering interval each allocation is recorded with some
+probability.
+When a fixed amount of memory allocations pass then the analysis is launched.
+
+In the analysis phase, the traced allocation groups are sorted with respect to the \textit{net number} of allocations
+in the last interval
+(the net number of allocations is the difference between the total numbers of allocation at
+the beginning and at the end of the interval).
+The aim of this phase is to mark outstanding groups as suspects.
+Observe that this would be impossible without assumptions that
+most of the memory management is correct and each occurring leak
+touches only a small number of groups.
+
+The implemented mechanism of detecting outliers among the groups is as follows.
+Let $(a_i)$ be the sequence of net allocations of each group sorted in a non-increasing order
+and let $j$ be the first index such that $a_j > 2a_{j+1}$.
+If there is no such index or $j > \texttt{RANKING\_SIZE}$ (see Section \ref{sec:params}) then no anomalies are recorded.
+Otherwise all group with $a_i \ge a_j$ are marked suspect.
+When a group is marked for sufficiently many times in a row,
+we call it suspect and move on to the next tier.
+
+\begin{figure}
+\centering
+\includegraphics[scale=0.31]{chart1}
+\caption{Heap allocation pattern for initializing resources.
+	It should not be treated as a leak because all the allocation groups rise
+	simultaneously and in short periods.
+	Each layer represents allocations of size $[4i, 4(i+1))$ bytes for some $i$
+	(this applies to all the charts).}
+\label{fig:chart1}
+\vspace{0.5cm}
+
+\includegraphics[scale=0.31]{chart2}
+\caption{The two groups rising incessantly while others stay on the same level will
+	be marked suspect.}
+\label{fig:chart2}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics[scale=0.3]{chart4}
+	\caption{Allocation pattern in heap memory usage occurring when loading new pages.
+	It might generate a false positive if the parameters are not adjusted correctly.}
+\label{fig:chart4}
+\vspace{1.08cm}
+
+\includegraphics[scale=0.31]{chart3}
+	\caption{Common peaks in memory usage should not raise an alert.}
+\label{fig:chart3}
+\end{figure}
+
+\subsection{Parameters}
+\label{sec:params}
+
+In this section we present a list of most important parameters of the algorithm.
+They should be empirically adjusted to find the best compromise between
+effectiveness and overhead, as well as between sensitivity and the false positive ratio.
+
+\begin{enumerate}
+
+\item \texttt{SAMPLING\_RATE}: The probability of an allocation
+	event being recorded by the leak detector.
+	It allows to reduce almost total overhead while keeping the algorithm correct.
+	The Figure \ref{fig:overhead} shows that the reduction of overhead is close
+	to being proportional to the \texttt{SAMPLING\_RATE}.
+	Setting this value low reduces the probability of finding a particular leak
+	but this can be balanced by enabling the detector for a larger percentage of users.
+
+\item \texttt{ANALYSIS\_INTERVAL}: Number of bytes to be allocated on the heap before the next
+	analysis phase starts.
+	It is supposed to be large enough so the running time of the analysis does not
+	affect user experience.
+	Our implementation performs analysis after every 32 megabytes allocated
+	on the heap.
+
+\item \texttt{SUSPICION\_THRESHOLD}: Number of times in a row an allocation group
+	has to be marked suspect to trigger an alert.
+	It should be set sufficiently high to suppress generating alerts for code that initializes resources
+	with a caveat that a too large value might affect the detector's sensitivity.
+
+\item \texttt{RANKING\_SIZE}: Number of the most active allocation groups
+	that is being checked in the analysis phase.
+	Activeness is measured as a net number of allocations in the last interval.
+	The value of \texttt{RANKING\_SIZE} should be between the maximum number
+	of allocation groups that may simultaneously generate leaks and the
+	number of active groups during valid resources initialization.
+
+\item \texttt{MAX\_STACK\_DEPTH}: Indicates how deep the call stack is read to
+	identify the context of an allocation.
+	Call sites that differ only in the base level of the stack are likely to
+	work with similar logic and therefore should be clustered together
+	in the leak analysis.
+	It is also worth mentioning that reading each level of the call stack
+	has a noticeable cost in the running time.
+	In the implementation \texttt{MAX\_STACK\_DEPTH} has been set to 4,
+	however each level may contain numerous inlined function calls.
+
+\item \texttt{HIGH\_WATER\_MARK}: The minimum number of total allocated bytes for an
+	allocation group to be considered a potential leak.
+
+\end{enumerate}
+
+\subsection{Dealing with false positives}
+\label{sec:false}
+
+There are many valid patterns in the heap allocation history that might trigger the algorithm's
+heuristics.
+Fortunately the parameters of the leak detector can be tuned up to ignore the most of
+the false positive patterns.
+
+Lots of memory gets allocated in the first seconds of the browser's bootstrapping
+and stays on the heap until the process termination (see Figure \ref{fig:chart1}).
+Setting high \texttt{ANALYSIS\_INTERVAL} and \texttt{SUSPICION\_THRESHOLD}
+prevents raising an alert when the growth is temporary.
+High \texttt{SUSPICION\_THRESHOLD} helps also against memory usage peaks
+occurring alongside computing expensive functions (see Figure \ref{fig:chart3}).
+Loading a new page might increase the number of allocations in a small
+number of groups (see Figure \ref{fig:chart4}).
+To avoid marking them suspect one should set high \texttt{HIGH\_WATER\_MARK}
+and low \texttt{RANKING\_SIZE}.
+
+Unfortunately there also exist valid patterns that are hardly distinguishable from
+the memory leaks.
+One of them is generated by data structures with their own garbage-collecting mechanisms.
+For example, buffers for video data do not release cached objects until some storage threshold
+is reached or they are notified that the operating system is under memory pressure.
+There is a simple argument that this intractability is inevitable.
+The decision whether a container is a source of a memory leak
+depends on its future usage.
+If some stale data remain in the buffer and the garbage-collection is never triggered
+then this should be considered a leak.
+
+The practical way to deal with this kind of reports is to
+classify false positives by call stacks.
+The profiling server can store a list of call stack patterns
+which have been generated by a garbage-collecting container
+after they are reported once.
+This way engineers working on the application's memory usage
+can filter out the uninteresting reports.
+
+\section{Implementation}
+The leak detector has been implemented in C++ and submitted to the Chromium repository, where
+it can be browsed~\cite{chromium-leak}.
+In this section we will focus only on the non-trivial aspects of the implementation.
+
+\subsection{Hooks}
+
+The leak detector logic has been injected in the \texttt{malloc} and \texttt{free} functions
+and then compiled with the rest of the application.
+All the additional code is located in \textit{hooks}: \texttt{AllocHook(const void*~p, size\_t size)}
+and \texttt{FreeHook(const void* p)}
+(see a high-level pseudocode in (\ref{alg:alloc-hook}) and (\ref{alg:free-hook})),
+that get called after the allocation/deallocation is completed.
+
+As the leak detector module also performs allocation, there is a possibility
+of ending up with a loop.
+To avoid this, hooks are surrounded by guard checks and do not proceed
+if called inside themselves.
+However, this way the leak detector cannot track leaks generated by itself.
+
+\subsection{Critical path and sampling}
+
+As we want to work with any allocator we must inject the detector's logic into
+standard signatures \texttt{(const void* p, size\_t size)} for allocation and
+\texttt{(const void* p)} for freeing memory.
+Every time these routines are called we need to increment a counter (only for allocation),
+perform a sampling procedure, and -- if the event gets sampled -- update advanced statistics.
+Whereas the overhead created by the majority of operations can be suppressed by setting a low
+sampling factor, counting and sampling form the critical path.
+
+Incrementing the counter is necessary to launch the analysis in fixed intervals.
+Because synchronizing an access to the counter variable across many threads is expensive,
+the counter has been implemented efficiently using a thread-local storage (TLS) \todo{cite?}.
+At a single allocation event the thread-local counter is incremented and after every \texttt{UPDATE\_INTERVAL}
+bytes of allocation the global counter gets updated.
+Choosing the value of \texttt{UPDATE\_INTERVAL} is a trade-off between frequency of concurrent accesses
+to the shared memory and providing granularity.
+We set it to \texttt{ANALYSIS\_INTERVAL} divided by 1024.
+
+The second instruction on the critical path is sampling.
+The algorithm cannot track freeing a memory which allocation has not been recorded
+so \texttt{free(p)} should be sampled if and only if the related malloc has been been sampled.
+Hence, the result of \texttt{ShouldSample(p)} should depend only on the value of~\texttt{p}.
+Our implementation uses hashing function from the FarmHash library~\cite{farmhash}
+to transform the value of~\texttt{p} into a pseudo-random variable with an uniform
+distribution on $[0, 2^{64})$ and proceeds if it hits a segment of size proportional
+to the \texttt{SAMPLING\_RATE}.
+There is a caveat associated with this approach though.
+If the allocator assigns exactly the same address repeatedly during a single execution
+then the distribution of hash values might not be uniform.
+
+\begin{figure}
+\centering
+\includegraphics[scale=0.45]{overhead}
+	\caption{A comparison of the overhead for different values of \texttt{SAMPLING\_RATE}.
+	The chart presents time spent on executing interior leak detector code (i.e. inside
+	function \texttt{RecordAlloc, RecordFree, Analyze}), waiting on locks, and accessing
+	thread-local storage, expressed as a percentage of total Chromium runtime.
+	Values for locks and TLS refer to all occurrences in the application, not only related to leak detection.
+	\comment{We should elaborate on how this was measured.}
+	}
+\label{fig:overhead}
+\end{figure}
+
+\begin{algorithm}
+	\caption{A hook at the end of \texttt{malloc(size\_t size)}}
+\begin{algorithmic}[1]
+\Function{AllocHook}{\texttt{const void* p, size\_t size}}
+	\State \texttt{IncrementCounter()}
+	\If {\texttt{!ShouldSample(p)}}
+		\Return
+	\EndIf
+	\State \texttt{RecordAlloc(size, GetCallStack())}
+	\If {\texttt{AnalysisIntervalCounted()}}
+		\State \texttt{Analyze()}
+	\EndIf
+\EndFunction
+\end{algorithmic}
+\label{alg:alloc-hook}
+\end{algorithm}
+
+\begin{algorithm}
+	\caption{A hook at the end of \texttt{free(const void* p)}}
+\begin{algorithmic}[1]
+\Function{FreeHook}{\texttt{const void* p}}
+	\If {\texttt{!ShouldSample(p)}}
+		\Return
+	\EndIf
+	\State \texttt{RecordFree(GetSize(p), GetCallStack(MAX\_STACK\_DEPTH));}
+\EndFunction
+\end{algorithmic}
+\label{alg:free-hook}
+\end{algorithm}
+
+\subsection{Data structures}
+
+\comment{
+Describe what is the complexity of record operations in tier 1 and 2
+(respectively arrays and hash arrays), hash map for GetSize(p).
+Mention about the analysis phase -- $O(\log n)$ complexity
+for getting candidates with the highest count.
+Maybe add pseudocode for Analysis().}
+
+\subsection{Extracting call stacks}
+
+In order to generate legible reports about the leaks found, one
+need to refer to the names of functions in the call stack.
+The default way to provide this kind of information is to
+include additional data about the origin of each instruction,
+i.e. the file name and the line number, in the binary file.
+However this affects noticeably the binary size.
+
+Alternatively, one can perform symbolization after the report
+arrives at the server of the profiling service.
+We assume there is a function \texttt{GetCallStack}
+available in the application code, returning addresses of functions on the stack
+up to a given depth.
+The raw address of a function in the binary, combined with a build identifier,
+is sufficient to determine the pre-compilation symbol name and the
+exact place of origin.
+In practice the symbolization requires keeping an array of reverse-compilation data for each build,
+which might be large.
+Such a service is maintained as a part of Google-wide Profiling~\cite{gwp}
+and supports symbolization for all official Chromium builds.
+\comment{Doesn't this part disclose too much about authors' affiliation?}
+
+\section{Results for Chromium}
+
+In this section we give several examples of memory leaks in Chromium found
+thanks to our method.
+We also elaborate why finding them might have been difficult with other tools.
+\comment{More results to come. Should we refer to particular chromium bugs?
+Maybe include charts with allocation history for each bug?
+We should indicate whether bugs were found when profiling on local machines and which
+with the end users.
+Also mention something about the false positives ratio.}
+
+\subsection{History accumulates redundant nodes with automatic refreshing}
+
+In order to hep user keep track of the previously visited pages, a browser should maintain a history.
+It can be implemented as a tree data structure with an access to the previous node for each entry.
+The history may have limited capacity or
+we may assume that the user will not be able
+to visit too many sites during one session.
+However, a problem arises when a script refreshes a page automatically in short intervals.
+This makes the history grow incessantly.
+
+The problem cannot be diagnosed with a simple reachability analysis as the redundant
+nodes are stored in a container that itself does not leak.
+It is also impossible to track it with a static analysis as the issue is related to an exterior
+code that is being interpreted by the application.
+The problem could have been found within the regular debugging phase during the development process as
+it escalates quickly (leaving such a script running overnight can make the browser crash)
+compared to other memory leaks.
+However it is impossible to visit every problematic web site in the testing phase.
+The other idea may be to wait until the problem makes the browser crash at the user's device
+and then investigate the crash report.
+Unfortunately when a process is killed under the memory pressure there is no time neither for an extensive
+heap analysis nor for sending whole memory image with the report.
+
+\section{Discussion}
+\comment{What are the ideas for defining allocation groups?
+Ask a questions about possible better heuristics, maybe compare the net allocation number of each group
+to the mean or median?}
+
+\appendix
+\section{Appendix Title}
+
+\comment{This is the text of the appendix.}
+
+\acks
+
+\comment{Acknowledgments, if needed.}
+
+% We recommend abbrvnat bibliography style.
+
+\bibliographystyle{abbrvnat}
+
+% The bibliography should be embedded for final submission.
+
+%\begin{thebibliography}{}
+%\softraggedright
+\bibliography{memleak}
+
+\end{document}
