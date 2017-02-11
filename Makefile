@@ -7,7 +7,7 @@ pdf: memleak.tex
 	pdflatex memleak.tex
 
 spellcheck:
-	for i in *.tex; do aspell --personal=./personal.wl -c $$i; done
+	for i in *.tex; do aspell --lang=en --personal=./personal.wl -c $$i; done
 
 clean:
 	rm -f *.dvi *.ps *.pdf *.bbl *.aux *.log

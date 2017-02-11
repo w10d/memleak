@@ -83,13 +83,13 @@ we are able to report when objects are still reachable but
 should have been released nevertheless.
 The algorithm is based on statistical profiling and can be parameterized in order to
 keep the overhead low and reduce the number of reported false positives.
-The peak runtime overhead is less than 3\% and it is negligible for the rest of time \todo{cite?}.
+The peak runtime overhead is less than 3\% and it is negligible for the rest of time.
 There is no memory overhead and the method works
 with any allocator.
 What distinguishes our detector from the majority of broadly used tools,
 it does not require the process to terminate.
 
-These attributes make it a perfect tool for analyzing a web browser application.
+These attributes make it an ideal tool for analyzing a web browser application.
 We explain how we have applied our method to the Chromium browser and give
 examples of the leaks found.
 
@@ -123,9 +123,8 @@ Well-known tools such as Valgrind, LeakSanitizer, Purify \cite{valgrind, leak-sa
 for processes running on a local machine and with the analysis
 performed after the process terminates.
 These assumption are not satisfied for, e.g. server processes
-that are meant to run incessantly, or web browsers that are run
-on remote devices and the big percentage of process terminations
-occur after crashes \todo{how much? cite?}.
+that are meant to run indefinitely, or web browsers whose processes
+do not terminate until they run out of memory.
 On the other hand, intensive monitoring of allocation history
 introduces a noticeable overhead which spoils the user experience.
 We present a heuristic-based algorithm that is free of mentioned issues.
@@ -138,7 +137,7 @@ after time $t$.
 An object is \textit{unreachable} at time $t$ if there is no reference chain
 leading to it starting from global or stack variables.
 It is easy to see that every unreachable object is at the same time leaked.
-Whereas detecting unreachability is easy when having an access to the reference graph,
+Whereas detecting unreachability is easy with access to the reference graph,
 in general it is impossible to foresee if an object is going to be used in the future.
 In order to be completely sure about finding all the leaks, one should analyze whole
 allocation history after the process is terminated and detect moments when objects cease being accessed
@@ -146,9 +145,12 @@ allocation history after the process is terminated and detect moments when objec
 This approach is burdened with a large overhead though, what makes it practical only
 for local runs.
 
-Chromium is an open-source web browser project~\cite{chromium} written in C++.
-\comment{Should we write more about Chromium architecture,
-its relation to Chrome, the market share?}
+Chromium -- the application we experiment on -- is an open-source web browser project~\cite{chromium} written in C++.
+It operates with a single \textit{browser} process and a family
+of \textit{renderer} processes, each responsible for a group
+of tabs associated with a single domain.
+Chrome -- one of many Chromium builds -- is currently the most popular web browser in global scope~\cite{wikimedia}.
+
 
 \section{Related work}
 
@@ -172,7 +174,7 @@ into the object code.
 It introduces runtime overhead of factor 3-5 what is acceptable for running
 the code locally.
 This kind of analysis is easily combined with detecting other memory access errors
-such as buffer overflow, multiple frees, or accesses of already freed memory.
+such as buffer overflow, multiple frees, or accesses to already freed memory.
 LeakSanitizer, a tool supported by Clang compiler~\cite{leak-san}, can be used with AddressSanitizer
 which helped finding over 300 bugs in Chromium~\cite{address}.
 Similar functionality is offered by Valgrind working with GCC compiler~\cite{valgrind}.
@@ -229,7 +231,8 @@ Finally we describe the results of running our detector on remote
 devices and processing the gathered data that comes from the end users.
 To the best of our knowledge, we are the first to publish results
 of such an experiment.
-\comment{Mention briefly about the results.}
+In Section~\ref{sec:results} we show particular Chromium issues
+that have been detected and repaired with a help of our tool.
 
 \section{The algorithm}
 
@@ -239,7 +242,7 @@ the allocation strategy, we need some assumptions about the nature of the applic
 \begin{enumerate}
 \item Most allocation instructions are correct.
 \item The allocation events can be clustered in a relatively small number of groups
-	such that each leak should fall into a single group.
+	such that each leak should fall into a single bucket.
 \item There is no garbage-collecting mechanism running in the background.
 	See Section \ref{sec:false} for explanation.
 \end{enumerate}
@@ -247,52 +250,54 @@ the allocation strategy, we need some assumptions about the nature of the applic
 The algorithm is designed to work in several tiers.
 This makes it possible to distinguish potential leaks basing only on coarse statistics before spending resources on investigating more
 precise data.
-In each tier the allocation events are divided into \textit{allocation groups}.
-The groups should be designed in such a way that every leak could be observed within a single group,
-or -- if this is infeasible -- within a small percentage of groups.
-When a group is diagnosed to contain a potential leak, the next tier is launched and the group gets dismantled
-into subgroups.
+In each tier the allocation events are divided into \textit{allocation buckets}.
+The buckets should be designed in such a way that every leak could be observed within a single bucket,
+or -- if this is infeasible -- within a small percentage of buckets.
+When a bucket is diagnosed to contain a potential leak, the next tier is launched and the bucket gets dismantled
+into subbuckets.
 If the last tier is reached then a report is generated and sent to the profiling server.
 
 In our implementation we initially focus on the size of allocation.
-For the sake of efficiency each group contains allocations of size $[4i, 4(i+1))$ bytes for some $i$.
-In the second tier groups are defined by the call stack of the allocation instruction
+For the sake of efficiency each bucket tracks some size class --
+in the implementation each class is given as $[4i, 4(i+1))$ bytes for some $i$.
+In the second tier buckets are defined by the call stack of the allocation instruction
 (or some part of the call stack, see Section \ref{sec:params}).
 Observe that this schema might not work for every type of application.
-For example, if the leaked memory consists of arrays or strings with dynamically calculated sizes,
-a memory growth might be observed in many allocation groups.
+For example, if the leaked memory consists of arrays with dynamically calculated sizes,
+a memory growth might be observed in many allocation buckets.
 In this situation one should consider a different design of tiers.
 
 In every tier the leak detector operates in two alternating modes which are
 the data gathering interval and the analyze phase.
 The time-flow in the algorithm is measured with the total number of bytes allocated on the heap
-by all the processes of the application.
-During the data gathering interval each allocation is recorded with some
+by all the processes of the application, without subtracting any frees.
+During the data gathering interval each allocation and deallocation is recorded with some
 probability.
 When a fixed amount of memory allocations pass then the analysis is launched.
 
-In the analysis phase, the traced allocation groups are sorted with respect to the \textit{net number} of allocations
+In the analysis phase, the traced allocation buckets are sorted with respect to the \textit{net number} of allocations
 in the last interval
 (the net number of allocations is the difference between the total numbers of allocation at
 the beginning and at the end of the interval).
-The aim of this phase is to mark outstanding groups as suspects.
+The aim of this phase is to mark outstanding buckets as suspects.
 Observe that this would be impossible without assumptions that
 most of the memory management is correct and each occurring leak
-touches only a small number of groups.
+touches only a small number of buckets.
 
-The implemented mechanism of detecting outliers among the groups is as follows.
-Let $(a_i)$ be the sequence of net allocations of each group sorted in a non-increasing order
+One could employ arbitrary clustering schema to detect outliers among the buckets.
+The mechanism we have implemented is as follows.
+Let $(a_i)$ be the sequence of net allocations of each bucket sorted in a non-increasing order
 and let $j$ be the first index such that $a_j > 2a_{j+1}$.
 If there is no such index or $j > \texttt{RANKING\_SIZE}$ (see Section \ref{sec:params}) then no anomalies are recorded.
-Otherwise all group with $a_i \ge a_j$ are marked suspect.
-When a group is marked for sufficiently many times in a row,
+Otherwise all buckets with $a_i \ge a_j$ are marked suspect.
+When a bucket is marked for sufficiently many times in a row,
 we call it suspect and move on to the next tier.
 
 \begin{figure}
 \centering
 \includegraphics[scale=0.31]{chart1}
 \caption{Heap allocation pattern for initializing resources.
-	It should not be treated as a leak because all the allocation groups rise
+	It should not be treated as a leak because all the allocation buckets rise
 	simultaneously and in short periods.
 	Each layer represents allocations of size $[4i, 4(i+1))$ bytes for some $i$
 	(this applies to all the charts).}
@@ -300,7 +305,7 @@ we call it suspect and move on to the next tier.
 \vspace{0.5cm}
 
 \includegraphics[scale=0.31]{chart2}
-\caption{The two groups rising incessantly while others stay on the same level will
+\caption{The two buckets rising incessantly while others stay on the same level will
 	be marked suspect.}
 \label{fig:chart2}
 \end{figure}
@@ -342,17 +347,17 @@ effectiveness and overhead, as well as between sensitivity and the false positiv
 	Our implementation performs analysis after every 32 megabytes allocated
 	on the heap.
 
-\item \texttt{SUSPICION\_THRESHOLD}: Number of times in a row an allocation group
+\item \texttt{SUSPICION\_THRESHOLD}: Number of times in a row an allocation bucket
 	has to be marked suspect to trigger an alert.
 	It should be set sufficiently high to suppress generating alerts for code that initializes resources
 	with a caveat that a too large value might affect the detector's sensitivity.
 
-\item \texttt{RANKING\_SIZE}: Number of the most active allocation groups
+\item \texttt{RANKING\_SIZE}: Number of the most active allocation buckets
 	that is being checked in the analysis phase.
 	Activeness is measured as a net number of allocations in the last interval.
 	The value of \texttt{RANKING\_SIZE} should be between the maximum number
-	of allocation groups that may simultaneously generate leaks and the
-	number of active groups during valid resources initialization.
+	of allocation buckets that may simultaneously generate leaks and the
+	number of active buckets during valid resources initialization.
 
 \item \texttt{MAX\_STACK\_DEPTH}: Indicates how deep the call stack is read to
 	identify the context of an allocation.
@@ -365,7 +370,7 @@ effectiveness and overhead, as well as between sensitivity and the false positiv
 	however each level may contain numerous inlined function calls.
 
 \item \texttt{HIGH\_WATER\_MARK}: The minimum number of total allocated bytes for an
-	allocation group to be considered a potential leak.
+	allocation bucket to be considered a potential leak.
 
 \end{enumerate}
 
@@ -377,14 +382,14 @@ heuristics.
 Fortunately the parameters of the leak detector can be tuned up to ignore the most of
 the false positive patterns.
 
-Lots of memory gets allocated in the first seconds of the browser's bootstrapping
+Lot of memory gets allocated in the first seconds of the browser's bootstrapping
 and stays on the heap until the process termination (see Figure \ref{fig:chart1}).
 Setting high \texttt{ANALYSIS\_INTERVAL} and \texttt{SUSPICION\_THRESHOLD}
 prevents raising an alert when the growth is temporary.
 High \texttt{SUSPICION\_THRESHOLD} helps also against memory usage peaks
 occurring alongside computing expensive functions (see Figure \ref{fig:chart3}).
 Loading a new page might increase the number of allocations in a small
-number of groups (see Figure \ref{fig:chart4}).
+number of buckets (see Figure \ref{fig:chart4}).
 To avoid marking them suspect one should set high \texttt{HIGH\_WATER\_MARK}
 and low \texttt{RANKING\_SIZE}.
 
@@ -399,7 +404,7 @@ depends on its future usage.
 If some stale data remain in the buffer and the garbage-collection is never triggered
 then this should be considered a leak.
 
-The practical way to deal with this kind of reports is to
+A practical way to deal with this kind of reports is to
 classify false positives by call stacks.
 The profiling server can store a list of call stack patterns
 which have been generated by a garbage-collecting container
@@ -450,13 +455,15 @@ The second instruction on the critical path is sampling.
 The algorithm cannot track freeing a memory which allocation has not been recorded
 so \texttt{free(p)} should be sampled if and only if the related malloc has been been sampled.
 Hence, the result of \texttt{ShouldSample(p)} should depend only on the value of~\texttt{p}.
-Our implementation uses hashing function from the FarmHash library~\cite{farmhash}
+Our implementation uses fast multiplicative hashing function with the hash multiplier taken from the FarmHash library~\cite{farmhash}
 to transform the value of~\texttt{p} into a pseudo-random variable with an uniform
 distribution on $[0, 2^{64})$ and proceeds if it hits a segment of size proportional
 to the \texttt{SAMPLING\_RATE}.
-There is a caveat associated with this approach though.
-If the allocator assigns exactly the same address repeatedly during a single execution
-then the distribution of hash values might not be uniform.
+Observe that even if the allocator assigns exactly the same address repeatedly during a single execution,
+what skews the distribution of hash values, this would not perturb the analysis.
+This is because an address may be reused only after the object previously occupying
+this place in memory is deallocated.
+Therefore, such a sequence of allocations cannot be a part of a memory leak.
 
 \begin{figure}
 \centering
@@ -501,7 +508,7 @@ then the distribution of hash values might not be uniform.
 \label{alg:free-hook}
 \end{algorithm}
 
-\subsection{Data structures}
+\subsection{The analysis}
 
 \comment{
 Describe what is the complexity of record operations in tier 1 and 2
@@ -509,6 +516,26 @@ Describe what is the complexity of record operations in tier 1 and 2
 Mention about the analysis phase -- $O(\log n)$ complexity
 for getting candidates with the highest count.
 Maybe add pseudocode for Analysis().}
+
+In both Tier 1 and Tier 2, the allocation info (address, size, call stack if available) is stored in a hash table. In Tiers 1 and 2, the allocation count for the size class of the allocated memory is incremented by 1. In Tier 2, the allocation count for the call stack within that size class is also incremented by 1.
+All of these operations are $O(1)$ in time complexity.
+
+\begin{enumerate}
+\item Get the top N allocation size, ordered by number of allocs minus number of frees (i.e. the net number of allocations). We have arbitrarily chosen N=16 in our code.
+
+\item Compare this list of top size classes by number of net allocations against list obtained in Step 1 from the previous analysis. Determine the change in number of net allocations (deltas) for each allocation size from the previous analysis.
+
+\item Order the allocation sizes by largest net change in deltas. Find allocation sizes with deltas that are more than twice as large as the next largest delta. This is a simple outlier cluster detection algorithm, but a more sophisticated algorithm could be used here. If the largest delta is zero or negative, no results are generated from this step.
+
+\item The sizes with outlier deltas are considered suspects. They must be suspected \texttt{SUSPICION\_THRESHOLD} times in a row to open up Tier 2.
+
+\item For Tier 2, repeat Steps 1-3 for call stacks for a suspected allocation size. The call stacks with outlier deltas are considered suspects. If a call stack is suspected \texttt{SUSPICION\_THRESHOLD} times in a row, it will generate an actual leak report.
+\end{enumerate}
+
+The analysis has time complexity $O(nk)$, where $k$ is the number of distinct allocation size classes or call stacks. However, it runs relatively infrequently if we choose a high enough \texttt{ANALYSIS\_INTERVAL} value (e.g. 128 MB) and does not create a performance bottleneck. Based on our data from the field, \texttt{RecordAlloc} and \texttt{RecordFree} take up about 75\% of the total CPU cycles used by the leak detector.
+
+\comment{Citation: CWP dashboard shows ~4000 samples from leak detector code. ~3000 are from these two functions.}
+
 
 \subsection{Extracting call stacks}
 
@@ -534,19 +561,17 @@ and supports symbolization for all official Chromium builds.
 \comment{Doesn't this part disclose too much about authors' affiliation?}
 
 \section{Results for Chromium}
+\label{sec:results}
 
 In this section we give several examples of memory leaks in Chromium found
 thanks to our method.
 We also elaborate why finding them might have been difficult with other tools.
-\comment{More results to come. Should we refer to particular chromium bugs?
-Maybe include charts with allocation history for each bug?
-We should indicate whether bugs were found when profiling on local machines and which
-with the end users.
-Also mention something about the false positives ratio.}
+\comment{Remove this if we do not say anything about that.
+Maybe include charts with allocation history for each bug?}
 
-\subsection{History accumulates redundant nodes with automatic refreshing}
+\subsection{History accumulates redundant nodes with automatic refreshing \cite{cr-refresh}}
 
-In order to hep user keep track of the previously visited pages, a browser should maintain a history.
+In order to help user keep track of the previously visited pages, a browser should maintain a history.
 It can be implemented as a tree data structure with an access to the previous node for each entry.
 The history may have limited capacity or
 we may assume that the user will not be able
@@ -567,9 +592,29 @@ and then investigate the crash report.
 Unfortunately when a process is killed under the memory pressure there is no time neither for an extensive
 heap analysis nor for sending whole memory image with the report.
 
+\subsection{Unreleased variables in Flash plugin API \cite{cr-flash}}
+The Flash plugin API in Chrome uses a refcounting system when passing variables between it and the rest of Chrome. But this refcounting system is only necessary for Object types. For other ref-counted types (e.g. String, Array, Dictionary), the variable gets reconstituted once passed to the other side of the Flash-Chrome boundary, and no refcounting is required. The refcount of the variable must be released, or else the refcount tracking data structure (a hash map) will accumulate entries and grow in memory usage.
+
+\subsection{Orphaned interprocess communication requests \cite{cr-orphaned}}
+
+Chrome has an interprocess communication pipeline that passes frames between the browser and renderer processes. If a frame from the browser was deleted before the renderer receives it, the renderer process would still maintain an open connection handle to wait for the frame. As more frames are deleted this way, the renderer accumulates more handles while waiting for frames that will never arrive. The issue has been fixed by detecting the deletion of the frame by the browser, and delete the connection handle.
+
+\subsection{Delete old renderer pass mappings \cite{cr-mappings}}
+
+The Chrome compositor does multiple-pass rendering, and keeps track of which passes have been made on each compositor surface during the rendering of a frame. Entries to track rendering passes that were not used for the current frame remained in memory indefinitely. This was fixed by deleting the entries that were not used for the current frame.
+
+\subsection{Memory pressure during video playback \cite{cr-playback}}
+
+The leak detector revealed that the memory buffers used in video playback were taking up an estimated $>200$ MB of memory on Chromebooks with 2 GB of total memory and less than 200 MB of free memory. This was reported to the Chrome video team, which decided that the garbage collection of video playback buffers needs to be more aggressive on low-memory systems.
+
+\subsection{Per-file updates when opening file viewer \cite{bug-files}}
+
+This issue has been reported recently and has not been yet addressed in time of preparing this article.
+When the file viewer app in Chrome opens a folder, it creates a file change object to track the presence of each file in the folder. When all files have been tracked with these objects, it deletes all of them. When opening a folder with many files, many objects are created at once before being deleted. This causes a temporary spike in memory usage. The Chrome developers are looking into fixing this.
+
 \section{Discussion}
-\comment{What are the ideas for defining allocation groups?
-Ask a questions about possible better heuristics, maybe compare the net allocation number of each group
+\comment{What are the ideas for defining allocation buckets?
+Ask a question about possible better heuristics, maybe compare the net allocation number of each bucket
 to the mean or median?}
 
 \appendix
