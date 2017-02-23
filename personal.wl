@@ -1,4 +1,4 @@
-personal_ws-1.1 en 66 
+personal_ws-1.1 en 67 
 FarmHash
 deallocations
 UpdateStatisticAlloc
@@ -10,6 +10,7 @@ refcounting
 ShouldSample
 RecordAlloc
 inlined
+deallocate
 pseudocode
 hashmaps
 malloc
@@ -32,8 +33,8 @@ yy
 memleak
 IncrementCounter
 Micha
-JVM
 outlier
+JVM
 parameterized
 GetCallStack
 Chilimbi
