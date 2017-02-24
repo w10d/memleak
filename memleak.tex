@@ -79,7 +79,7 @@
 \maketitle
 
 \begin{abstract}
-We present a novel memory leak detection algorithm searching for potential
+We present a novel diagnostic algorithm searching for bloats and potential
 leaks at runtime.
 Besides scenarios when a part of allocated heap becomes unreachable,
 we are able to report when objects are still reachable but
@@ -105,7 +105,7 @@ examples of the leaks found.
 %term1, term2
 
 \keywords
-Low-overhead monitoring, runtime analysis, memory leaks
+Low-overhead monitoring, runtime analysis, memory leak, memory bloat
 
 \section{Introduction}
 
@@ -143,12 +143,17 @@ allocation history after the process is terminated and detect moments when objec
 This approach is burdened with a large overhead though, what makes it practical only
 for local runs.
 
+A notion more suitable for real-time monitoring is a \textit{memory bloat}.
+It happens when some group of allocations consumes a superlinear amount of memory
+(with respect to the overall heap).
+We observe that in practice keeping track of memory bloats might lead to detection
+of leaks or other errors.
+
 Chromium -- the application we experiment on -- is an open-source web browser project~\cite{chromium} written in C++.
 It operates with a single \textit{browser} process and a family
 of \textit{renderer} processes, each responsible for a group
 of tabs associated with a single domain.
 Chrome -- one of many Chromium builds -- is currently the most popular web browser in global scope~\cite{wikimedia}.
-
 
 \section{Related work}
 
@@ -216,9 +221,13 @@ the application.
 Our approach is more pragmatical -- we consciously pay more attention to instructions
 allocating more memory and focus on minimizing the total waste of RAM.
 
+Explicit memory bloat detection was described in the work concerning Hound~\cite{hound},
+a real-time monitoring system designed for application written in C and C++.
+It combines statistical sampling with other debugging techniques.
+
 \section{Our contribution}
 
-We present a new approach to the memory leak detection via the statistical profiling
+We present a new approach to the memory bloat detection via the statistical profiling
 and explain what are the applications for which our algorithm is suitable.
 Our design is crafted for keeping the overhead low and working with any
 allocator type.
@@ -235,13 +244,13 @@ that have been detected and repaired with a help of our tool.
 \section{The algorithm}
 \label{sec:algorithm}
 
-As we want to detect leaks in a real-time, with little overhead and little interference with
+Since our ideal goal is to detect leaks in a real-time, with little overhead and little interference with
 the allocation strategy, we need some assumptions about the nature of the application.
 
 \begin{enumerate}
 \item Most allocation instructions are correct.
 \item The allocation events can be clustered in a relatively small number of groups
-	such that each leak should fall into a single bucket.
+	such that each bloat should fall into a single bucket.
 \item There is no garbage-collecting mechanism running in the background.
 	See Section \ref{sec:false} for explanation.
 \end{enumerate}
@@ -296,7 +305,7 @@ we call it suspect and move on to the next tier.
 \centering
 \includegraphics[scale=0.31]{chart1}
 \caption{Heap allocation pattern for initializing resources.
-	It should not be treated as a leak because all the allocation buckets rise
+	It should not be treated as a bloat because all the allocation buckets rise
 	simultaneously and in short periods.
 	Each layer represents allocations of size $[4i, 4(i+1))$ bytes for some $i$
 	(this applies to all the charts).}
@@ -560,7 +569,7 @@ and supports symbolization for all official Chromium builds.
 \section{Results for Chromium}
 \label{sec:results}
 
-In this section we give several examples of memory leaks in Chromium found
+In this section we give several examples of memory bloats and leaks in Chromium found
 thanks to our method.
 We also elaborate why finding them might have been difficult without our tool.
 
