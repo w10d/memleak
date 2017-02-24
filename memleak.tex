@@ -95,11 +95,6 @@ it does not require the process to terminate.
 These attributes make it an ideal tool for analyzing a web browser application.
 We explain how we have applied our method to the Chromium browser and give
 examples of the leaks found.
-
-	\comment{This is a draft. All comments about future changes are written in blue.
-	Any changes to the authors list?}
-	\todo{The red color is reserved for the author's private environment for todos.
-	Remember to anonymize the paper before sending to ISMM.}
 \end{abstract}
 
 \category{D.2.4}{Software Engineering}{Software/Program Verification}[reliability, statistical methods]
@@ -538,7 +533,7 @@ Indeed, for each bucket we need to update the hash map
 storing the data from the previous step in order to compare against
 it in the next step.
 The analysis phase runs relatively infrequently though and we have agreed there is
-no need for further optimizations in this place.
+no need for any further optimizations in this place.
 
 \subsection{Extracting call stacks}
 
@@ -567,23 +562,16 @@ and supports symbolization for all official Chromium builds.
 
 In this section we give several examples of memory leaks in Chromium found
 thanks to our method.
-We also elaborate why finding them might have been difficult with other tools.
-\comment{Remove this if we do not say anything about that.
-Maybe include charts with allocation history for each bug?}
-
-\subsection{Per-file updates when opening file viewer \cite{bug-files}}
-
-\todo{Rewrite} This issue has been reported recently and has not been yet addressed in time of preparing this article.
-When the file viewer app in Chrome opens a folder, it creates a file change object to track the presence of each file in the folder. When all files have been tracked with these objects, it deletes all of them. When opening a folder with many files, many objects are created at once before being deleted. This causes a temporary spike in memory usage. The Chrome developers are looking into fixing this.
+We also elaborate why finding them might have been difficult without our tool.
 
 \subsection{Unreleased variables in the Flash plugin \cite{cr-flash}}
 
-The Flash plugin API in Chrome uses a refcounting (i.e. reference counting) system when passing variables between it and the rest of Chrome.
+The Flash plugin API in Chromium uses a refcounting (i.e. reference counting) system when passing variables between it and the rest of Chromium.
 This is usually necessary to keep track of how long the object is being used and
 to deallocate its memory as soon as there are no more references to it.
 However, objects of some moderately simple types (in particular String, Array, and Dictionary)
-get reconstituted once passed to the other side of the Flash-Chrome boundary, and therefore no refcounting is required.
-The reference counter of the variable must be then released, or othwerwise the refcount tracking data
+get reconstituted once passed to the other side of the Flash-Chromium boundary, and therefore no refcounting is required.
+The reference counter of the variable must be then released, or otherwise the refcount tracking data
 structure (a hash map) will accumulate entries and grow in memory usage.
 This is an example of a memory bloat occurring in a data structure
 that does not constitute a leak itself and therefore it is difficult to diagnose (see Section~\ref{sec:false}).
@@ -591,11 +579,15 @@ Our algorithm was able to detect it because allocations involved in the memory b
 
 \subsection{Delete old renderer pass mappings \cite{cr-mappings}}
 
-\todo{Rewrite} The Chrome compositor does multiple-pass rendering, and keeps track of which passes have been made on each compositor surface during the rendering of a frame. Entries to track rendering passes that were not used for the current frame remained in memory indefinitely. This was fixed by deleting the entries that were not used for the current frame.
+\todo{Rewrite} The Chromium compositor performs multiple-pass rendering and keeps track of which passes have been
+made on each compositor surface during the rendering of a frame.
+Entries to track rendering passes that were not used for the current frame
+remained in memory indefinitely.
+This was fixed by deleting the entries that were not used for the current frame.
 
 \subsection{Orphaned interprocess communication requests \cite{cr-orphaned}}
 
-Chrome has an interprocess communication pipeline that passes frames between the browser and renderer processes (see Introduction).
+Chromium employs an interprocess communication pipeline that passes frames between the browser and renderer processes (see Introduction).
 If a frame from the browser has been deleted before the renderer receives it,
 the renderer process would still maintain an open connection handle to wait for the frame.
 As more frames get deleted this way, the renderer accumulates more handles while waiting for frames that will never arrive.
@@ -603,7 +595,10 @@ The issue has been fixed by introducing a mechanism in the browser process that 
 
 \subsection{Memory pressure during video playback \cite{cr-playback}}
 
-\todo{Rewrite} The leak detector revealed that the memory buffers used in video playback were taking up an estimated $>200$ MB of memory on Chromebooks with 2 GB of total memory and less than 200 MB of free memory. This was reported to the Chrome video team, which decided that the garbage collection of video playback buffers needs to be more aggressive on low-memory systems.
+The leak detector has revealed that the memory buffers used in the video playback
+have been employing over 200 MB of memory on Chromebooks with only 2 GB of total memory and less than 200 MB of free memory.
+This was reported to the Chrome video team, which decided that the garbage collection of video playback
+buffers needs to be more aggressive on low-memory systems.
 
 \subsection{History accumulates redundant nodes with automatic refreshing \cite{cr-refresh}}
 
@@ -628,19 +623,30 @@ and then investigate the crash report.
 Unfortunately when a process is killed under the memory pressure there is no time neither for an extensive
 heap analysis nor for sending whole memory image with the report.
 
+\subsection{Per-file updates when opening file viewer \cite{bug-files}}
+
+When the file viewer application in Chromium opens a folder, it creates a file change object to track the presence of each file in the folder.
+After all files have been tracked with these objects, then they may be deleted,
+However, when opening a folder with a large number of files, many objects are created at once
+without waiting until others get deleted.
+This creates a temporary spike in the memory usage, what could perturb the fluency of execution.
+Although the memory bloat may occur only in a short period of time,
+our algorithm measures time flow by the number of allocations and
+is likely to launch the analysis phase during such a spike.
+
+This issue has been reported recently and has not been addressed yet in time of preparing this article.
+
 \section{Discussion}
-\comment{What are the ideas for defining allocation buckets?
-Ask a question about possible better heuristics, maybe compare the net allocation number of each bucket
-to the mean or median?}
 
-\appendix
-\section{Appendix Title}
-
-\comment{This is the text of the appendix.}
-
-\acks
-
-\comment{Acknowledgments, if needed.}
+The main area in which the algorithm might possibly be improved is
+the outlier detection phase.
+The procedure described in Section~\ref{sec:algorithm} is fast and easy to implement
+but adding a single element with a very high value of $a_i$ can totally alter the judgment
+for other elements.
+It might be interesting to investigate methods based on measuring distance from the mean or the median
+of all the values in question.
+Another trace is to try clustering approach to identify a group of the buckets that grows
+significantly faster than others.
 
 % We recommend abbrvnat bibliography style.
 
