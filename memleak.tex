@@ -93,7 +93,7 @@ live allocations are increasing more quickly than the overall heap size.
 The algorithm is based on statistical profiling and can be parameterized in order to
 keep the overhead low and reduce the number of reported false positives.
 When enabled, the worst-case runtime overhead is less than 3\%.
-There is negligible memory overhead, and the approach is generally applicable to any allocator, including garbage-collected languages.
+There is negligible memory overhead, and the approach is generally applicable to any allocator.
 Our detector is further distinguished from common tools by the fact that
 it does not require the process to terminate.
 
@@ -143,8 +143,7 @@ It is easy to see that every unreachable object is at the same time leaked.
 Whereas detecting unreachability is easy with access to the reference graph,
 in general it is impossible to foresee if an object is going to be used in the future.
 In order to be completely sure about finding all the leaks, one should analyze whole
-allocation history after the process is terminated and detect moments when objects cease being accessed
-\todo{any profiler working like this?}.
+allocation history after the process is terminated and detect moments when objects cease being accessed.
 This approach is burdened with a large overhead though, what makes it practical only
 for local runs.
 
@@ -176,7 +175,7 @@ analysis \cite{flow, saber}.
 More common dynamic leak detectors analyze allocation history during runtime.
 The easiest approach is to detect variables getting unreachable
 what can be performed, e.g. using \textit{mark and sweep} technique~\cite{mark-and-sweep}
-known mainly from its application to JVM (Java Virtual Machine) garbage collector \todo{cite}.
+known mainly from its application to JVM (Java Virtual Machine) garbage collector.
 One of the first dynamic detectors, Purify~\cite{purify}, searches for memory leaks by injecting its instructions
 into the object code.
 It introduces runtime overhead of factor 3-5 what is acceptable for running
@@ -236,6 +235,10 @@ We present a new approach to the memory bloat detection via the statistical prof
 and explain what are the applications for which our algorithm is suitable.
 Our design is crafted for keeping the overhead low and working with any
 allocator type.
+This allows the detector to be enabled all the time, what is important as not all issues encountered on
+the field can be reliably reproduced.
+What is more, SpeedBloat integrates the traditional debugging process of 'report issues, reproduce, triage, analyze'
+into a single tool.
 
 The algorithm has been implemented for Chromium and deployed.
 We elaborate on the non-trivial aspects of the implementation.
@@ -244,7 +247,7 @@ devices and processing the gathered data that comes from the end users.
 To the best of our knowledge, we are the first to publish results
 of such an experiment.
 In Section~\ref{sec:results} we show particular Chromium issues
-that have been detected and repaired with a help of our tool.
+that have been detected and repaired with a help of SpeedBloat.
 
 \section{The algorithm}
 \label{sec:algorithm}
@@ -253,7 +256,7 @@ Since our ideal goal is to detect leaks in a real-time, with little overhead and
 the allocation strategy, we need some assumptions about the nature of the application.
 
 \begin{enumerate}
-\item Most allocation instructions are correct.
+\item The vast majority of allocations in the program are freed accordingly.
 \item The allocation events can be clustered in a relatively small number of groups
 	such that each bloat should fall into a single bucket.
 \item There is no garbage-collecting mechanism running in the background.
@@ -294,7 +297,7 @@ in the last interval
 the beginning and at the end of the interval).
 The aim of this phase is to mark outstanding buckets as suspects.
 Observe that this would be impossible without assumptions that
-most of the memory management is correct and each occurring leak
+the majority of allocations are freed accordingly and each occurring leak
 touches only a small number of buckets.
 
 One could employ arbitrary clustering schema to detect outliers among the buckets.
@@ -327,7 +330,7 @@ we call it suspect and move on to the next tier.
 \centering
 \includegraphics[scale=0.3]{chart4}
 	\caption{Allocation pattern in heap memory usage occurring when loading new pages.
-	It might generate a false positive if the parameters are not adjusted correctly.}
+	It might generate a false positive if the parameters are not adjusted properly.}
 \label{fig:chart4}
 \vspace{1.08cm}
 
@@ -592,11 +595,9 @@ Our algorithm was able to detect it because allocations involved in the memory b
 
 \subsection{Delete old renderer pass mappings \cite{cr-mappings}}
 
-\todo{Rewrite} The Chromium compositor performs multiple-pass rendering and keeps track of which passes have been
-made on each compositor surface during the rendering of a frame.
-Entries to track rendering passes that were not used for the current frame
-remained in memory indefinitely.
-This was fixed by deleting the entries that were not used for the current frame.
+The Chromium compositor keeps track of temporary textures that are used to render a frame.
+Entries that track information about these textures remained in memory indefinitely, even after those textures themselves were deleted.
+The issue has been fixed by deleting the entries that were not used for the current frame.
 
 \subsection{Orphaned interprocess communication requests \cite{cr-orphaned}}
 
