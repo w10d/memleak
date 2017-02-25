@@ -60,7 +60,7 @@
 \titlebanner{Internal draft - do not distribute} % These are ignored unless
 \preprintfooter{Runtime memory leak detection -- draft} % 'preprint' option specified.
 
-\title{Runtime Memory Leak Detection Using Statistical Profiling}
+\title{SpeedBloat: Runtime Memory Bloat Detection Using Statistical Profiling}
 \subtitle{}
 
 \iffalse
@@ -79,22 +79,27 @@
 \maketitle
 
 \begin{abstract}
-We present a novel diagnostic algorithm searching for bloats and potential
-leaks at runtime.
-Besides scenarios when a part of allocated heap becomes unreachable,
-we are able to report when objects are still reachable but
-should have been released nevertheless.
+Intermittent and slow-growing memory bloat is notoriously difficult to
+debug because they may only manifest under unknown or hard to
+reproduce conditions and may require hours to reproduce.  Therefore,
+it is desirable to precisely identify bloating allocations as they
+occur.  We present SpeedBloat, a novel diagnostic algorithm for statistically
+identifying potential memory bloat (including memory leaks) using
+low-overhead runtime hooks in the memory allocator.
+
+This technique aims to capture more general issues than true leaks
+(where allocations become unreachable) by identifying callsites whose
+live allocations are increasing more quickly than the overall heap size.
 The algorithm is based on statistical profiling and can be parameterized in order to
 keep the overhead low and reduce the number of reported false positives.
-The peak runtime overhead is less than 3\% and it is negligible for the rest of time.
-There is no memory overhead and the method works
-with any allocator.
-What distinguishes our detector from the majority of broadly used tools,
+When enabled, the worst-case runtime overhead is less than 3\%.
+There is negligible memory overhead, and the approach is generally applicable to any allocator, including garbage-collected languages.
+Our detector is further distinguished from common tools by the fact that
 it does not require the process to terminate.
 
-These attributes make it an ideal tool for analyzing a web browser application.
+These attributes make it an ideal tool for analyzing long-running applications with imperceptible cost.
 We explain how we have applied our method to the Chromium browser and give
-examples of the leaks found.
+several examples of leaks found so far.
 \end{abstract}
 
 \category{D.2.4}{Software Engineering}{Software/Program Verification}[reliability, statistical methods]
@@ -580,8 +585,7 @@ This is usually necessary to keep track of how long the object is being used and
 to deallocate its memory as soon as there are no more references to it.
 However, objects of some moderately simple types (in particular String, Array, and Dictionary)
 get reconstituted once passed to the other side of the Flash-Chromium boundary, and therefore no refcounting is required.
-The reference counter of the variable must be then released, or otherwise the refcount tracking data
-structure (a hash map) will accumulate entries and grow in memory usage.
+The reference counter of the variable must be then released, or otherwise the refcount tracking data structure (a hash map) will accumulate entries and grow in memory usage.
 This is an example of a memory bloat occurring in a data structure
 that does not constitute a leak itself and therefore it is difficult to diagnose (see Section~\ref{sec:false}).
 Our algorithm was able to detect it because allocations involved in the memory bloat share common allocation sizes.
