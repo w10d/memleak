@@ -323,8 +323,9 @@ we call it suspect and move on to the next tier.
 \vspace{0.5cm}
 
 \includegraphics[scale=0.31]{chart2}
-\caption{The two buckets rising incessantly while others stay on the same level will
-	be marked suspect.}
+\caption{Two of the bucket counts rise continuously 
+ while others stay on the same level.
+ This is going to be marked suspect.}
 \label{fig:chart2}
 \end{figure}
 
@@ -397,10 +398,10 @@ effectiveness and overhead, as well as between sensitivity and the false positiv
 
 There are many valid patterns in the heap allocation history that might trigger the algorithm's
 heuristics.
-Fortunately the parameters of the leak detector can be tuned up to ignore the most of
+Fortunately the parameters of the leak detector can be tuned to ignore the most of
 the false positive patterns.
 
-Lot of memory gets allocated in the first seconds of the browser's bootstrapping
+Much memory gets allocated in the first seconds of the browser's bootstrapping
 and stays on the heap until the process termination (see Figure \ref{fig:chart1}).
 Setting high \texttt{ANALYSIS\_INTERVAL} and \texttt{SUSPICION\_THRESHOLD}
 prevents raising an alert when the growth is temporary.
@@ -461,7 +462,7 @@ Whereas the overhead created by the majority of operations can be suppressed by 
 sampling factor, counting and sampling form the critical path.
 
 Incrementing the counter is necessary to perform the analysis phase in fixed intervals.
-Synchronizing the access to the counter variable across many threads is expensive,
+Synchronizing access to the counter variable across many threads is expensive,
 so the counter has been implemented efficiently using a thread-local storage (TLS).
 At a single allocation event the thread-local counter is incremented and after every \texttt{UPDATE\_INTERVAL}
 bytes of allocation the global counter gets updated.
@@ -650,7 +651,8 @@ Although the memory bloat may occur only in a short period of time,
 our algorithm measures time flow by the number of allocations and
 is likely to launch the analysis phase during such a spike.
 
-This issue has been reported recently and has not been addressed yet in time of preparing this article.
+This issue has been reported recently and
+has been acknowledged by developers but has not been addressed yet.
 
 \section{Discussion}
 
@@ -661,7 +663,7 @@ but adding a single element with a very high value of $a_i$ can totally alter th
 for other elements.
 It might be interesting to investigate methods based on measuring distance from the mean or the median
 of all the values in question.
-Another trace is to try clustering approach to identify a group of the buckets that grows
+Another tweak is to try different clustering algorithms for identifying a group of the buckets that grows
 significantly faster than others.
 
 % We recommend abbrvnat bibliography style.
