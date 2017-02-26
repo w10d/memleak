@@ -119,7 +119,8 @@ Memory leaks waste Random Access Memory (RAM) and thus reduce computer performan
 Small and outwardly harmless memory leaks often go unnoticed for an extended period
 of time until they aggregate and then become problematic.
 At this point, though, it is harder to locate and rectify the sources of the leaks.
-Thus, it is helpful to detect memory leaks before they reduce the performance of computers.
+Thus, it is helpful to detect memory leaks before they
+reduce the performance of the system or cause the process to terminate altogether.
 
 Recent years brought new challenges in the field of memory leak detection.
 Well-known tools such as Valgrind, LeakSanitizer, Purify \cite{valgrind, leak-san, purify} were designed
@@ -144,7 +145,7 @@ Whereas detecting unreachability is easy with access to the reference graph,
 in general it is impossible to foresee if an object is going to be used in the future.
 In order to be completely sure about finding all the leaks, one should analyze whole
 allocation history after the process is terminated and detect moments when objects cease being accessed.
-This approach is burdened with a large overhead though, what makes it practical only
+This approach is burdened with a large overhead though, which makes it practical only
 for local runs.
 
 A notion more suitable for real-time monitoring is a \textit{memory bloat}.
@@ -165,9 +166,9 @@ On the highest level, memory leak detectors can be divided into static
 and dynamic types.
 Static detectors process the code itself apart from any runtime scenario
 looking for any leak that is possible to happen.
-Even basing on heuristics, they require a lot of computational power.
+Even based on heuristics, they require a lot of computational power.
 Xie and Aiken~\cite{boolean} managed to investigate six large open source
-projects, including Linux kernel, with false positive ratio 10.8\%
+projects, including the Linux kernel, with false positive ratio 10.8\%
 by expressing the problem with boolean constraints.
 The state-of-art static leak detectors employs a value-flow
 analysis \cite{flow, saber}.
@@ -183,8 +184,8 @@ the code locally.
 This kind of analysis is easily combined with detecting other memory access errors
 such as buffer overflow, multiple frees, or accesses to already freed memory.
 LeakSanitizer, a tool supported by Clang compiler~\cite{leak-san}, can be used with AddressSanitizer
-which helped finding over 300 bugs in Chromium~\cite{address}.
-Similar functionality is offered by Valgrind working with GCC compiler~\cite{valgrind}.
+which helped to find over 300 bugs in Chromium~\cite{address}.
+Similar functionality is offered by Valgrind for the GCC compiler~\cite{valgrind}.
 
 A remarkable examples of detectors which go beyond the unreachability analysis
 are Cork~\cite{cork} and Sleigh~\cite{sleigh}, tools designed for garbage-collected languages.
@@ -202,19 +203,20 @@ to detect parts of the application consuming too much memory.
 An attempt to create such a profiler was undertaken in the Chromium project
 which resulted in releasing the
 Deep Memory Profiler~\cite{deep}.
-It helped finding several memory leaks, however it became impractical
+It helped finding several memory leaks, but it became impractical
 and has not been maintained since 2015.
 
-The disadvantages of the most of dynamic leak detectors are the requirement of a process
-to terminate and the employment of complex data structures tracking the heap behavior.
+The disadvantages of most dynamic leak detectors are the requirement that
+a process terminates and the use of complex data structures to track heap behavior.
 To surpass them, one can take advantage of statistical techniques.
 
 An implementation of a leak detection algorithm based on the statistical profiling
 has been described by Hauswirth and Chilimbi~\cite{hauswirth}.
 They have achieved a low runtime overhead ($<5\%$ with sampling rate $0.1\%$) and have not required a process
 to terminate.
-The implementation of the algorithm, a SWAT library, was tested (however only locally) on two computer games, multimedia application,
-and web application and was able to detect some real memory leaks, however no statistics about false positives were given.
+The implementation of the algorithm, a SWAT library, was tested locally on two computer games,
+a multimedia application, and a web application, and was able to detect some real memory leaks.
+However, no statistics about false positives were given.
 
 The algorithm tries to detect heap objects that have not been accessed for a long time.
 This is done by explicit heap monitoring which introduces also some space overhead (up to 10\%).
@@ -222,11 +224,11 @@ An interesting idea of their work is an enhancement of the sampling rate
 for infrequently executed code segments in order to cover miscellaneous allocation events.
 This makes the leak detector better suited for checking total correctness of
 the application.
-Our approach is more pragmatical -- we consciously pay more attention to instructions
-allocating more memory and focus on minimizing the total waste of RAM.
+Our approach is more practical -- we consciously pay more attention to
+instructions that allocate more memory and focus on minimizing total RAM waste.
 
 Explicit memory bloat detection was described in the work concerning Hound~\cite{hound},
-a real-time monitoring system designed for application written in C and C++.
+a real-time monitoring system designed for applications written in C and C++.
 It combines statistical sampling with other debugging techniques.
 
 \section{Our contribution}
