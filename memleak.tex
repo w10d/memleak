@@ -80,7 +80,7 @@
 
 \begin{abstract}
 Intermittent and slow-growing memory bloat is notoriously difficult to
-debug because they may only manifest under unknown or hard to
+debug because it may only manifest under unknown or hard to
 reproduce conditions and may require hours to reproduce.  Therefore,
 it is desirable to precisely identify bloating allocations as they
 occur.  We present SpeedBloat, a novel diagnostic algorithm for statistically
@@ -115,12 +115,12 @@ Low-overhead monitoring, runtime analysis, memory leak, memory bloat
 \section{Introduction}
 
 Memory leaks occur when an application fails to release memory which is no longer needed.
-Memory leaks waste Random Access Memory (RAM) and thus reduce computer performance.
-Small and outwardly harmless memory leaks often go unnoticed for an extended period
-of time until they aggregate and then become problematic.
+Leaks waste Random Access Memory (RAM) and thus reduce performance.
+Slow and outwardly harmless memory leaks often go unnoticed for an extended period
+of time until they reach a large enough size to be problematic.
 At this point, though, it is harder to locate and rectify the sources of the leaks.
-Thus, it is helpful to detect memory leaks before they
-reduce the performance of the system or cause the process to terminate altogether.
+Thus, it is helpful to detect memory leaks as early as possible, before they
+reduce performance or cause the process to terminate altogether.
 
 Recent years brought new challenges in the field of memory leak detection.
 Well-known tools such as Valgrind, LeakSanitizer, Purify \cite{valgrind, leak-san, purify} were designed
@@ -128,11 +128,11 @@ for processes running on a local machine and with the analysis
 performed after the process terminates.
 These assumption are not satisfied for, e.g. server processes
 that are meant to run indefinitely, or web browsers whose processes
-do not terminate until they run out of memory.
-On the other hand, intensive monitoring of allocation history
-introduces a noticeable overhead which spoils the user experience.
-We present a heuristic-based algorithm that is free of mentioned issues.
-It is based on profiling and therefore it works best for applications used widely
+do not terminate until the browser is closed or crashes.
+Further, intensive monitoring of allocation history
+introduces a substantial overhead which spoils the user experience.
+We present a heuristic-based algorithm, SpeedBloat, that is free of these issues.
+It is sampling-based and therefore it works best for applications used widely
 by customers.
 
 To clarify the goals of the algorithm let us start with defining the problem.
@@ -142,23 +142,23 @@ An object is \textit{unreachable} at time $t$ if there is no reference chain
 leading to it starting from global or stack variables.
 It is easy to see that every unreachable object is at the same time leaked.
 Whereas detecting unreachability is easy with access to the reference graph,
-in general it is impossible to foresee if an object is going to be used in the future.
+in general it is undecidable to foresee if an object is going to be used in the future.
 In order to be completely sure about finding all the leaks, one should analyze whole
 allocation history after the process is terminated and detect moments when objects cease being accessed.
 This approach is burdened with a large overhead though, which makes it practical only
-for local runs.
+for local runs of programs that are built to cleanly tear down their state.
 
 A notion more suitable for real-time monitoring is a \textit{memory bloat}.
-It happens when some group of allocations consumes a superlinear amount of memory
-(with respect to the overall heap).
+It happens when some group of allocations grow more rapidly than the overall heap.
 We observe that in practice keeping track of memory bloats might lead to detection
 of leaks or other errors.
 
-Chromium -- the application we experiment on -- is an open-source web browser project~\cite{chromium} written in C++.
+SpeedBloat is built-in to Chromium, an open-source web browser
+project~\cite{chromium} written in C++.
 It operates with a single \textit{browser} process and a family
 of \textit{renderer} processes, each responsible for a group
 of tabs associated with a single domain.
-Chrome -- one of many Chromium builds -- is currently the most popular web browser in global scope~\cite{wikimedia}.
+Chrome -- one of many Chromium builds -- is currently the most popular web browser in global scope~\cite{wikimedia}.  SpeedBloat is currently enabled for C++ heap allocations for a small fraction of all browser sessions in Chrome running on ChromeOS. 
 
 \section{Related work}
 
@@ -425,11 +425,17 @@ then this should be considered a leak.
 
 A practical way to deal with this kind of reports is to
 classify false positives by call stacks.
-The profiling server can store a list of call stack patterns
+The backend can store a list of call stack patterns
 which have been generated by a garbage-collecting container
 after they are reported once.
 This way engineers working on the application's memory usage
-can filter out the uninteresting reports.
+can persistently filter out the uninteresting reports.
+
+In practice, filtering through the initial set of bloat reports took a
+few weeks to identify which callstacks justified action and which to
+filter out.  At steady state, new reports that don't match existing
+filters are relatively rare, so a human can spend less than an hour a
+week checking for new bloats.
 
 \section{Implementation}
 The leak detector has been implemented in C++ and submitted to the Chromium repository, where
@@ -665,6 +671,16 @@ It might be interesting to investigate methods based on measuring distance from 
 of all the values in question.
 Another tweak is to try different clustering algorithms for identifying a group of the buckets that grows
 significantly faster than others.
+
+\section{Conclusion}
+
+This paper present SpeedBloat, a novel algorithm for online memory
+bloat detection.  SpeedBloat samples allocation sizes and callstacks
+to heuristically identify callsites that are growing more rapidly than
+the heap overall.  When enabled, the instrumentation has at most 3\%
+CPU overhead.  We present many of the real-world memory leaks detected
+in Chromium detected by profiling only a tiny fraction of browser
+sessions.
 
 % We recommend abbrvnat bibliography style.
 
